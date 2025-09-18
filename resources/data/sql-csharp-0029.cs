@@ -1,0 +1,56 @@
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+
+namespace ExecuteSqlRawMethodSample
+{
+    public class AppDbContext : DbContext
+    {
+        public DbSet<User> Users { get; set; }
+
+        // Pretend EF configuration
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.UseSqlServer("Server=.;Database=TestDb;Trusted_Connection=True;");
+        }
+    }
+
+    public class User
+    {
+        public int Id { get; set; }
+        public string UserName { get; set; }
+    }
+
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            using (var context = new AppDbContext())
+            {
+                // ❌ VIOLATION: Direct raw SQL execution using ExecuteSqlRaw
+                context.Database.ExecuteSqlRaw("DELETE FROM Users WHERE Id = 1");
+
+                // ❌ VIOLATION: Parameterized raw SQL still flagged (vendor lock risk)
+                int userId = 2;
+                context.Database.ExecuteSqlRaw("DELETE FROM Users WHERE Id = {0}", userId);
+
+                // ✅ COMPLIANT: Using EF LINQ for safe, portable data manipulation
+                var user = context.Users.FirstOrDefault(u => u.Id == 3);
+                if (user != null)
+                {
+                    context.Users.Remove(user);
+                    context.SaveChanges();
+                }
+
+                // ✅ COMPLIANT: Async-safe operations via EF Core
+                Task.Run(async () =>
+                {
+                    var newUser = new User { UserName = "Alice" };
+                    await context.Users.AddAsync(newUser);
+                    await context.SaveChangesAsync();
+                }).Wait();
+            }
+        }
+    }
+}
